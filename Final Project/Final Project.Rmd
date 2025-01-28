@@ -1,0 +1,272 @@
+---
+title: "Final Project"
+author: "Lily Bonds and Allie Siclari"
+date: "2024-11-19"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F, fig.align = "center")
+pacman::p_load(tidyverse, skimr, caTools, FNN, GGally)
+
+```
+
+## Introduction
+Our research question: Do arrests in Burlington, Vermont from 2012 to the present support a connection between racial and gender bias and the criminal justice system? Our dataset comes from the City of Burlington’s Police Department. It uses data from 2012 through July of 2024. The data is updated monthly. This dataset focuses on the arrests in Burlington Vermont, meaning it is only sampling a small portion of Vermont’s and the United States’ population, but encompasses all of Burlington’s arrest data. We do not suspect any sampling bias, considering this dataset provides information on every arrest made by the Burlington Police Department, regardless of arrest type, category, age, gender, race, etc., and comes from a reliable governmental source. This dataset is an observational study that is provided to the public because arrest reports are public records in Vermont. The public can make observations regarding arrests in Burlington based on this data. Data such as gender, race, age, and ethnicity are all obtained based on an individual’s legal identity. Data including incident number, arrest date, charge, felony, violent, category, and arrest type are all determined based on the conditions of an individual’s arrest. We do not suspect any bias in these measurements, given that this is governmental data that must be obtained according to the law. We are both interested in prison reform and recognize that individuals of color, primarily Black people, are disproportionately affected by the carceral system in the United States. We are interested in seeing if we can prove this with our dataset. Our study is interesting because we hypothesize that our data will be an outlier when compared to national data, considering Vermont is a primarily White state. Our dataset required some data cleaning, including removing values that were defined as NA, unknown, or other.
+
+```{r}
+#importing the Burlington arrests dataset
+arrests <- read.csv("arrests.csv")
+#cleaning some of the data
+arrests <-
+  arrests |>
+  filter(
+    race != "Other - U" & race != "Unknown - U" & race != "Asian - A" & race != "American Indian or Alaska Native - I" & race != "Native Hawaiian or Other Pacific Islander - P",
+    gender != "Unknown - U" & gender != "Transgender - T" & gender != "Non-Binary/Other - X",
+    !is.na(violent),
+    !is.na(age),
+    !is.na(felony),
+    age <= 100
+  )|> 
+  mutate(race = if_else(race == "White - W",0,1),
+          gender = if_else(gender == "Male - M",0,1),
+          felony = if_else(felony == FALSE,0,1),
+          violent = if_else(violent == FALSE,0,1))
+```
+
+## Data Visualization
+
+Graph 1: visualizing the arrest count of each gender grouped by race. This graph is a bar graph that shows the number of total arrests in the data for white vs. black individuals separated by gender. This visualization will be helpful to show the general trend with how many people of both races and genders are arrested.
+```{r}
+#create graph
+arrests |> mutate(race = if_else(race == 0,"White","Black"),
+          gender = if_else(gender == 0, "Male", "Female")) |>
+            ggplot(mapping = aes(x = race, fill = gender))+
+  geom_bar(position = "dodge", color = "white", width = 1)+
+  #scale y as percent
+  #scale_y_continuous(
+    #labels = scales::label_percent()
+  #)+
+  #add labels
+  labs(
+    title = "Distribution of Arrests by Race and Gender",
+    y = "Arrests",
+    x = "Race"
+  )+
+  #center title
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )+
+  scale_fill_manual(
+    values = c("Male" = "lightblue", "Female" = "pink")
+  )+
+  theme_bw()
+```
+From this bar graph, we can see that the majority of arrests for the black, and white demographic are men. The difference in gender is most significant for arrests of Asian and Black individuals, with close to 90% being men. The native american and pacific islander results may be less reliable due to the lack of arrests recorded for those races in Burlington.
+
+Graph 2: Visualizing arrests based on race and category. This graph is an area graph that shows the proportion white and black individuals arrested daily for each category. The graph will be helpful for analyzing the relationship between race and category.
+```{r}
+#format date column
+arrests_formatted <- arrests |>
+  mutate(arrest_date = as.Date(arrest_date, format = "%m/%d/%Y"))|> 
+  mutate(race = if_else(race == 0,"White","Black"))
+
+#count number of arrests per day per race per category
+arrest_counts <- arrests_formatted |>
+  group_by(arrest_date, race, category) |>
+  summarise(count = n(), .groups = 'drop')
+
+#create graph
+ggplot(data = arrest_counts, aes(x = arrest_date, y = count, fill = race)) +
+  geom_area(position = "fill") +
+  #group by category
+  facet_wrap(~category) +
+  #add labels
+  labs(
+    title = "Daily Arrests by Race and Category",
+    x = "Arrest Date",
+    y = "Percentage of Arrests",
+    fill = "Race"
+  )+
+  #legend at bottom, center title
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )+
+  scale_y_continuous(
+  #  limits = c(0, 10)
+    labels = scales::label_percent()
+  )+
+  scale_fill_manual(
+    values = c("White" = "lightblue", "Black" = "darkblue")
+  )+
+  theme_bw()
+```
+From this graph, we can see that for most categories, the majority of arrests from 2015-2024 are of white people. However, the Drugs category has a significant amount of arrests of black people consistently from around 2018 to 2022. For this time period, a majority of the drug-related arrests were of black individuals. In general, all categories have majority white people arrested daily.
+
+
+Graph 3: Histogram to visualize age distribution by gender and race
+```{r}
+#create graph of age distribution by race
+ggplot(
+  data = arrests, 
+  mapping = aes(
+    x = age, 
+    fill = race
+    )
+  ) +
+  #create histogram with 50 bins
+  geom_histogram(
+    bins = 50
+    ) +
+  #add facets of gender and alter variable names
+  facet_wrap(
+    facets = ~gender,
+    labeller = labeller(gender = c(
+      "Female - F" = "Female",
+      "Male - M" = "Male",
+      "Non-Binary/Other - X" = "Non-binary",
+      "Transgender - T" = "Transgender")
+    )
+  ) +
+  #alter legend variable names
+  scale_fill_discrete(
+    labels = c("Indian", "Asian", "Black", "Pacific Islander", "White")
+  ) +
+  #add title, x and y axis labels, and legend label
+  labs(
+    title = "Age Distribution by Race and Gender",
+    x = "Age",
+    y = "Count",
+    fill = "Race",
+  ) +
+  #set theme
+  theme_bw() +
+  #center and bold title
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+```
+From this graph, we can see that the majority of the population of this dataset is male, with the next largest population being female. There are very few individuals who identify as non-binary or transgender. Of these groups, the majority of arrests belong to White people, with Black individuals following. Arrests are most prevalent between ages 20 and 40, especially within the Black population. We can conclude that the Black male population aging from 20 to 40 is arrested at a higher rate than other groups within this range. 
+
+Graph 4: Heatmap to visualize the severity of violence associated with the arrest by gender and race
+```{r heatmap graph}
+#create heatmap data by grouping by race and gender and calculating proportions of violence
+heatmap_data <- arrests |>
+  group_by(race, gender) |>
+  summarise(
+    violent_count = sum(violent == TRUE),
+    total_count = n()
+    ) |>
+  mutate(
+    violent_proportion = violent_count / total_count
+    )
+
+#create graph with heatmap data
+ggplot(
+  data = heatmap_data, 
+  mapping = aes(
+    x = gender, 
+    y = race, 
+    fill = violent_proportion
+    )
+  ) +
+  #add heatmap
+  geom_tile() +
+  #add colors based on proportion of violence
+  scale_fill_gradient(
+    low = "lightblue", 
+    high = "red"
+  ) +
+  #alter x axis value names
+  scale_x_discrete(
+    labels = c("Female","Male","Non-Binary", "Transgender")
+  ) +
+  #alter y axis value names
+  scale_y_discrete(
+    labels = c("Indian", "Asian", "Black", "Pacific Islander", "White")
+  ) +
+  #add title, x and y axis labels, and legend label
+  labs(
+    title = "Percentage of Arrests Classified as Violent by Gender and Race",
+    x = "Gender",
+    y = "Race",
+    fill = "Rate of Violence"
+  ) +
+  #set theme
+  theme_bw() +
+  #center and bold title
+  theme(
+    plot.title = element_text(hjust = 0.3, face = "bold")
+  )
+```
+From this graph, the violence rates of males seems to be higher than the violence rates of females and non-binary and transgender individuals. The violence rates of White individuals seems to be higher than the violence rates of Black individuals. However, we can see that the rates of violence for Black vs White individuals is almost identical for females and males. Knowing that there are less than half as many Black individuals than White individuals in this dataset, we can conclude that in Burlington, classifications of violence are declared at higher rates when the individual is male rather than female and Black rather than White.
+
+## Machine Learning
+kNN regression: predicting age with gender, race, felony, and violent categorical variables. This regression shows the value of k that is most effective for predicting the age of the person arrested from the predictors mentioned using kNN regression. The visualization of R2 and MAE shows the trend of accuracy from increasing k values. This is helpful to see how accurately we can predict age from the data.
+```{r}
+#no rescaling required, because predictors are binary
+k <- 1:100
+fit_stats <- 
+  tibble(k = k,
+         R2 = rep(-1,length(k)),
+         MAE = rep(-1, length(k)))
+
+#test accuracy for all values of k
+for(i in 1:length(k)){
+  loop_knn <- 
+    knn.reg(
+      train = arrests |> select(gender, race, felony, violent),
+      y = arrests$age,
+      k = k[i]
+    )
+  fit_stats[i,"R2"] <- loop_knn$R2Pred
+  fit_stats[i,"MAE"] <- (arrests$age - loop_knn$pred) |> abs() |> mean()
+}
+
+#plot results
+fit_stats |>
+  pivot_longer(
+    cols = R2:MAE,
+    names_to = "fit_stat",
+    values_to = "fit"
+  ) |>
+  ggplot(mapping = aes(x = k, y = fit, color = fit_stat))+
+  geom_line(show.legend = F)+
+  facet_wrap(facets = ~ fit_stat,
+             scales = "free_y",
+             ncol = 1)+
+  theme_bw()+
+  labs(
+    title = "Comparing Accuracy of kNN Regression with Varying k",
+    y = "Fit",
+  )
+
+```
+```{r}
+fit_stats |> filter(R2 == max(R2) | MAE == min(MAE))
+
+age_knn <- knn.reg(
+  train = arrests |> select(gender, race, felony, violent),
+  y = arrests$age,
+  k = 99
+)
+
+tibble(y = arrests$age,
+       y_hat = age_knn$pred) |>
+  summarize(
+    R2 = 1- sum((y - y_hat)^2)/sum((y-mean(y))^2),
+    MAE = (y - y_hat) |> abs() |> mean(),
+    MAE_mean = (y - mean(y)) |> abs() |> mean(),
+    MAER = 1 - MAE/MAE_mean
+  )
+```
+kNN is appropriate for this regression because the age of the individuals arrested is not linear, but it is numeric. From the plot, we can see that a k value above 40 is best for this regression. The best choice of k is 99, because it produces the minimum MAE value, and is a simpler model than k=48, which produces a slightly higher R2 value. The regression model with k>40 is fairly accurate for predicting the ages in the data set, so we believe that the model can be used for future arrests as well. Predicting the age of the arrested individual is helpful, because we can use it to obtain information around the demographic of arrests, and find trends relating to the age of the individual.
+
+## Conclusions
+We can conclude that there is a higher number of arrests of men than women, non-binary individuals, and transgender individuals, specifically for the white, black, and asian race categories. Although there is a higher number of arrests of White people than Black people, we can see that there is some bias in how young Black men are charged during their arrests, with a significant number being classified as violent. There is also a disproportionately high number of black individuals arrested for drugs compared to other races. This shows that, although the population of Vermont is primarily White, there is some gender and racial bias in Burlington's arrests.
+
+
+## Limitations and Recommendations
+A major limitation in our study is that we only have the data for the city of Burlington, so the conclusions drawn from this study can only be applied to Burlington, Vermont. Another limitation is that the data only includes arrests from 2012 to 2024, which may not be long enough to evaluate long-term trends and bias of arrests by the Burlington Police Department. The data also is not complete, as there are missing values for some of the categories such as felony and violent that impede accurate analysis of these columns. For future research, We can compare the trends found for this data to statewide or nationwide data-sets to assess how the demographic of arrests in Burlington is different or similar to arrests in the rest of Vermont or in cities in other states across the United States.
